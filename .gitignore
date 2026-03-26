@@ -1,0 +1,37 @@
+# Environment & secrets
+.env
+.env.local
+.env.*
+*.env
+
+# Cache
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Internal tooling
+.claude/
+.gstack/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
