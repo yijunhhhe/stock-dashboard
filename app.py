@@ -593,8 +593,34 @@ def safe(d, key, default=None):
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_data(symbol: str):
     t = yf.Ticker(symbol)
-    info = t.info
-    hist = t.history(period="3y")
+
+    try:
+        info = t.info
+    except Exception:
+        info = {}
+
+    # Enrich sparse info dict with fast_info fields (more reliable on cloud)
+    try:
+        fi = t.fast_info
+        if not info.get("currentPrice") and not info.get("regularMarketPrice"):
+            price = getattr(fi, "last_price", None) or getattr(fi, "regular_market_price", None)
+            if price:
+                info["currentPrice"] = float(price)
+        if not info.get("previousClose"):
+            prev = getattr(fi, "previous_close", None)
+            if prev:
+                info["previousClose"] = float(prev)
+        if not info.get("marketCap"):
+            mc = getattr(fi, "market_cap", None)
+            if mc:
+                info["marketCap"] = float(mc)
+    except Exception:
+        pass
+
+    try:
+        hist = t.history(period="3y")
+    except Exception:
+        hist = pd.DataFrame()
 
     qf = None
     try:
@@ -1563,7 +1589,11 @@ def main():
 
     info = data["info"]
     if not info or not safe(info, "regularMarketPrice") and not safe(info, "currentPrice"):
-        st.error(f"No data found for **{symbol}**. Please check the ticker symbol.")
+        st.error(
+            f"No price data found for **{symbol}**. "
+            "This can happen when Yahoo Finance rate-limits requests from cloud servers. "
+            "Wait 30 seconds and try again, or verify the ticker is correct."
+        )
         return
 
     current_price = safe(info, "currentPrice") or safe(info, "regularMarketPrice")
@@ -1924,5 +1954,4 @@ def main():
     )
 
 
-if __name__ == "__main__":
-    main()
+main()
