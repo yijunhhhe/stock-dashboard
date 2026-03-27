@@ -72,9 +72,18 @@ def get_eps_estimates(data):
     est = data.get("eps_estimate")
     info = data["info"]
     # Primary: use Yahoo's own forwardEps for NTM (same basis as their forwardPE)
+    # Fallback to earnings_estimate "0y" if forwardEps missing
     cy_eps = safe(info, "forwardEps")
+    if cy_eps is None and est is not None and not est.empty:
+        try:
+            if "0y" in est.index:
+                v = est.loc["0y", "avg"] if "avg" in est.columns else None
+                cy_eps = round(float(v), 2) if v and not np.isnan(float(v)) else None
+        except Exception:
+            pass
 
     # For FY+1 use the analyst "+1y" estimate from earnings_estimate table
+    # Fallback to forwardEps so Price Targets still render
     ncy_eps = None
     if est is not None and not est.empty:
         try:
@@ -83,6 +92,8 @@ def get_eps_estimates(data):
                 ncy_eps = round(float(v), 2) if v and not np.isnan(float(v)) else None
         except Exception:
             pass
+    if ncy_eps is None:
+        ncy_eps = cy_eps
 
     return {"NTM": cy_eps, "FY+1": ncy_eps}
 
