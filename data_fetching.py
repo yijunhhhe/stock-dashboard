@@ -63,32 +63,32 @@ def fetch_data(symbol: str):
 
 
 def get_eps_estimates(data):
-    """Return {cy_label: eps, ncy_label: eps} from analyst estimates."""
+    """Return {cy_label: eps, ncy_label: eps} from analyst estimates.
+
+    Uses Yahoo's forwardEps (which backs their forwardPE) as the primary
+    near-term estimate to avoid fiscal-year misalignment for companies whose
+    year doesn't end in December (e.g. NVDA ends in January).
+    """
     est = data.get("eps_estimate")
+    info = data["info"]
     now = datetime.now()
     cy  = f"CY{now.year}"
     ncy = f"CY{now.year + 1}"
-    result = {cy: None, ncy: None}
 
+    # Primary: use Yahoo's own forwardEps for cy (same basis as their forwardPE)
+    cy_eps = safe(info, "forwardEps")
+
+    # For ncy use the analyst "+1y" estimate from earnings_estimate table
+    ncy_eps = None
     if est is not None and not est.empty:
         try:
-            # yfinance returns index with '0y' = current year, '+1y' = next year
-            if "0y" in est.index:
-                v = est.loc["0y", "avg"] if "avg" in est.columns else None
-                result[cy] = round(float(v), 2) if v and not np.isnan(float(v)) else None
             if "+1y" in est.index:
                 v = est.loc["+1y", "avg"] if "avg" in est.columns else None
-                result[ncy] = round(float(v), 2) if v and not np.isnan(float(v)) else None
+                ncy_eps = round(float(v), 2) if v and not np.isnan(float(v)) else None
         except Exception:
             pass
 
-    # Fallback to info fields if estimates missing
-    if result[cy] is None:
-        result[cy] = safe(data["info"], "trailingEps")
-    if result[ncy] is None:
-        result[ncy] = safe(data["info"], "forwardEps")
-
-    return result
+    return {cy: cy_eps, ncy: ncy_eps}
 
 
 def _strip_tz(idx):
