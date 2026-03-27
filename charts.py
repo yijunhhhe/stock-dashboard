@@ -76,35 +76,35 @@ def chart_pe_history(pe_df, stats, current_pe):
     return fig
 
 
-def chart_price_targets(current_price, scenarios_cy, scenarios_ncy, cy_label, ncy_label, metric_label):
-    """Waterfall-style grouped bar showing bear/base/bull for CY and NCY."""
+def chart_price_targets(current_price, scenarios_current, scenarios_next, current_label, next_label, metric_label):
+    """Bar chart showing bear/base/bull targets for current FY and next FY."""
     cases = ["Bear", "Base", "Bull"]
-    colors_cy  = ["#f97316", "#60a5fa", "#34d399"]
-    colors_ncy = ["#ea580c", "#3b82f6", "#22c55e"]
+    colors_current = ["#f97316", "#60a5fa", "#34d399"]
+    colors_next = ["#fb923c", "#93c5fd", "#6ee7b7"]
 
     fig = go.Figure()
 
-    cy_prices  = [s["price"] for s in scenarios_cy]
-    ncy_prices = [s["price"] for s in scenarios_ncy]
+    current_prices = [s["price"] for s in scenarios_current]
+    next_prices = [s["price"] for s in scenarios_next]
 
     fig.add_trace(go.Bar(
-        name=cy_label, x=cases, y=cy_prices,
-        marker_color=colors_cy,
-        text=[f"${p:.0f}" for p in cy_prices],
+        name=current_label, x=cases, y=current_prices,
+        marker_color=colors_current,
+        text=[f"${p:.0f}" for p in current_prices],
         textposition="outside",
         textfont=dict(color="#e2e8f8", size=13, family="monospace"),
-        width=0.35,
-        offset=-0.2,
+        width=0.34,
+        offset=-0.18,
     ))
 
     fig.add_trace(go.Bar(
-        name=ncy_label, x=cases, y=ncy_prices,
-        marker_color=colors_ncy,
-        text=[f"${p:.0f}" for p in ncy_prices],
+        name=next_label, x=cases, y=next_prices,
+        marker_color=colors_next,
+        text=[f"${p:.0f}" for p in next_prices],
         textposition="outside",
         textfont=dict(color="#e2e8f8", size=13, family="monospace"),
-        width=0.35,
-        offset=0.2,
+        width=0.34,
+        offset=0.18,
     ))
 
     # Current price line
@@ -133,20 +133,17 @@ def chart_price_targets(current_price, scenarios_cy, scenarios_ncy, cy_label, nc
     return fig
 
 
-def compute_targets(eps_cy, eps_ncy, stats, current_price):
+def compute_targets(eps, stats, current_price):
     """Bear/base/bull price targets from min/avg/max PE."""
     bear_pe = stats.get("min")
     base_pe = stats.get("avg")
     bull_pe = stats.get("max")
 
-    def scenario(eps, pe):
+    def scenario(pe):
         if not eps or not pe or eps <= 0:
             return None
         price = eps * pe
         upside = (price / current_price - 1) * 100
         return {"price": price, "upside": upside, "pe": pe}
 
-    return (
-        [s for s in [scenario(eps_cy, bear_pe), scenario(eps_cy, base_pe), scenario(eps_cy, bull_pe)] if s],
-        [s for s in [scenario(eps_ncy, bear_pe), scenario(eps_ncy, base_pe), scenario(eps_ncy, bull_pe)] if s],
-    )
+    return [s for s in [scenario(bear_pe), scenario(base_pe), scenario(bull_pe)] if s]

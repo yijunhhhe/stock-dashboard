@@ -125,7 +125,7 @@ def invalidate_cached_valuation_method(symbol):
 # ── P/E Expectations ──────────────────────────────────────────────────────────
 
 def _key_pe_expectations(symbol):
-    return f"peexpect:v2:{symbol.upper().strip()}"
+    return f"peexpect:v3:{symbol.upper().strip()}"
 
 
 def get_cached_pe_expectations(symbol):
@@ -154,3 +154,45 @@ def invalidate_cached_pe_expectations(symbol):
     if key in cache:
         del cache[key]
         _save(_prune(cache))
+
+
+# ── Forward Metrics ───────────────────────────────────────────────────────────
+
+def _key_forward_metrics(symbol):
+    return f"forwardmetrics:v4:{symbol.upper().strip()}"
+
+
+def get_cached_forward_metrics(symbol):
+    cache = _prune(_load())
+    key = _key_forward_metrics(symbol)
+    entry = cache.get(key)
+    if not entry:
+        _save(cache)
+        return None
+    entry["last_accessed_at"] = datetime.utcnow().isoformat()
+    cache[key] = entry
+    _save(cache)
+    return entry.get("value")
+
+
+def set_cached_forward_metrics(symbol, value):
+    cache = _prune(_load())
+    now = datetime.utcnow().isoformat()
+    cache[_key_forward_metrics(symbol)] = {"value": value, "fetched_at": now, "last_accessed_at": now}
+    _save(_prune(cache))
+
+
+def invalidate_cached_forward_metrics(symbol):
+    cache = _load()
+    key = _key_forward_metrics(symbol)
+    if key in cache:
+        del cache[key]
+        _save(_prune(cache))
+
+
+def clear_all_caches():
+    try:
+        if CACHE_PATH.exists():
+            CACHE_PATH.unlink()
+    except Exception:
+        _save({})

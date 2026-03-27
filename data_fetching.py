@@ -2,11 +2,14 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import requests
-import re
-from datetime import datetime
+from datetime import date
+from typing import Optional
+
+from dotenv import load_dotenv
 
 from utils import safe
+
+load_dotenv(".env.local")
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -59,34 +62,58 @@ def fetch_data(symbol: str):
     except Exception:
         pass
 
+    fy_end = None
+    if af is not None and getattr(af, "columns", None) is not None and len(af.columns) > 0:
+        try:
+            fy_end = pd.to_datetime(max(af.columns)).date()
+        except Exception:
+            fy_end = None
+
+    fiscal_meta = build_fiscal_year_metadata(fy_end)
+    current_price = info.get("currentPrice") or info.get("regularMarketPrice")
+    current_fy_eps = None
+    next_fy_eps = None
+    if eps_est is not None and not eps_est.empty:
+        try:
+            if "0y" in eps_est.index:
+                v = eps_est.loc["0y", "avg"] if "avg" in eps_est.columns else None
+                current_fy_eps = round(float(v), 2) if v and not np.isnan(float(v)) else None
+            if "+1y" in eps_est.index:
+                v = eps_est.loc["+1y", "avg"] if "avg" in eps_est.columns else None
+                next_fy_eps = round(float(v), 2) if v and not np.isnan(float(v)) else None
+        except Exception:
+            pass
+
+    info["forwardEps"] = current_fy_eps
+    info["forwardPE"] = round(float(current_price) / float(current_fy_eps), 2) if current_price and current_fy_eps and current_fy_eps > 0 else None
+    info["forwardEpsYear"] = fiscal_meta.get("current_year")
+    info["forwardEpsNextYear"] = fiscal_meta.get("next_year")
+    info["forwardMetricBasis"] = fiscal_meta.get("current_range")
+    info["forwardMetricNextBasis"] = fiscal_meta.get("next_range")
+    info["forwardEpsNext"] = next_fy_eps
+
     return {"info": info, "history": hist, "quarterly": qf, "annual": af, "eps_estimate": eps_est}
 
 
 def get_eps_estimates(data):
-    """Return {cy_label: eps, ncy_label: eps} from analyst estimates.
-
-    Uses Yahoo's forwardEps (which backs their forwardPE) as the primary
-    near-term estimate to avoid fiscal-year misalignment for companies whose
-    year doesn't end in December (e.g. NVDA ends in January).
-    """
+    """Return current and next fiscal-year EPS estimates with labels and date ranges."""
     est = data.get("eps_estimate")
     info = data["info"]
-    # Primary: use Yahoo's own forwardEps for NTM (same basis as their forwardPE)
-    # Fallback to earnings_estimate "0y" if forwardEps missing
-    cy_eps = safe(info, "forwardEps")
-    if cy_eps is None and est is not None and not est.empty:
+    fiscal_meta = {
+        "current_label": f"FY{safe(info, 'forwardEpsYear')}" if safe(info, "forwardEpsYear") else "Current FY",
+        "next_label": f"FY{safe(info, 'forwardEpsNextYear')}" if safe(info, "forwardEpsNextYear") else "Next FY",
+        "current_range": safe(info, "forwardMetricBasis"),
+        "next_range": safe(info, "forwardMetricNextBasis"),
+    }
+    current_label = fiscal_meta.get("current_label")
+    next_label = fiscal_meta.get("next_label")
+    ncy_eps = None
+    cy_eps = None
+    if est is not None and not est.empty:
         try:
             if "0y" in est.index:
                 v = est.loc["0y", "avg"] if "avg" in est.columns else None
                 cy_eps = round(float(v), 2) if v and not np.isnan(float(v)) else None
-        except Exception:
-            pass
-
-    # For FY+1 use the analyst "+1y" estimate from earnings_estimate table
-    # Fallback to forwardEps so Price Targets still render
-    ncy_eps = None
-    if est is not None and not est.empty:
-        try:
             if "+1y" in est.index:
                 v = est.loc["+1y", "avg"] if "avg" in est.columns else None
                 ncy_eps = round(float(v), 2) if v and not np.isnan(float(v)) else None
@@ -95,7 +122,58 @@ def get_eps_estimates(data):
     if ncy_eps is None:
         ncy_eps = cy_eps
 
-    return {"NTM": cy_eps, "FY+1": ncy_eps}
+    return {
+        "current_label": current_label,
+        "current_eps": cy_eps,
+        "current_range": fiscal_meta.get("current_range"),
+        "next_label": next_label,
+        "next_eps": ncy_eps,
+        "next_range": fiscal_meta.get("next_range"),
+    }
+
+
+def _format_fiscal_range(start_date: date, end_date: date):
+    return f"{start_date.year:04d}/{start_date.month:02d}-{end_date.year:04d}/{end_date.month:02d}"
+
+
+def _fiscal_period_from_end(end_date: date):
+    start_ts = pd.Timestamp(end_date) - pd.DateOffset(years=1) + pd.DateOffset(days=1)
+    start_date = start_ts.date()
+    return {
+        "label": f"FY{end_date.year}",
+        "year": end_date.year,
+        "start_date": start_date,
+        "end_date": end_date,
+        "range": _format_fiscal_range(start_date, end_date),
+    }
+def build_fiscal_year_metadata(fiscal_year_end: Optional[date]):
+    if fiscal_year_end is None:
+        return {
+            "current_label": "Current FY",
+            "next_label": "Next FY",
+            "current_year": None,
+            "next_year": None,
+            "current_range": None,
+            "next_range": None,
+        }
+
+    today = date.today()
+    current_end = fiscal_year_end
+    while current_end <= today:
+        current_end = (pd.Timestamp(current_end) + pd.DateOffset(years=1)).date()
+    next_end = (pd.Timestamp(current_end) + pd.DateOffset(years=1)).date()
+
+    current_period = _fiscal_period_from_end(current_end)
+    next_period = _fiscal_period_from_end(next_end)
+
+    return {
+        "current_label": current_period["label"],
+        "next_label": next_period["label"],
+        "current_year": current_period["year"],
+        "next_year": next_period["year"],
+        "current_range": current_period["range"],
+        "next_range": next_period["range"],
+    }
 
 
 def _strip_tz(idx):

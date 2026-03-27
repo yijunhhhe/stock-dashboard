@@ -120,6 +120,12 @@ Key facts:
 - FCF: {fmt_num(safe(info,'freeCashflow'))}
 - Analyst target mean: ${safe(info,'targetMeanPrice','N/A')}
 - Recommendation: {safe(info,'recommendationKey','N/A')}
+- Market cap: {fmt_num(safe(info,'marketCap'))}
+- Profit margin: {fmt_pct(safe(info,'profitMargins'))}
+- Return on equity: {fmt_pct(safe(info,'returnOnEquity'))}
+- Current FY EPS estimate: ${safe(info,'forwardEps','N/A')}
+- Next FY EPS estimate: ${safe(info,'forwardEpsNext','N/A')}
+- Fiscal range in use: {safe(info,'forwardMetricBasis','N/A')}
 
 Recent PE history points:
 {history_block}
@@ -128,29 +134,34 @@ Return ONLY valid JSON with this schema:
 {{
   "priced_in": {{
     "headline": "6-10 words",
-    "bullets": ["bullet 1", "bullet 2", "bullet 3"]
+    "bullets": ["bullet 1", "bullet 2", "bullet 3", "bullet 4"]
   }},
   "pe_up": {{
     "headline": "6-10 words",
-    "bullets": ["bullet 1", "bullet 2", "bullet 3"]
+    "bullets": ["bullet 1", "bullet 2", "bullet 3", "bullet 4"]
   }},
   "pe_down": {{
     "headline": "6-10 words",
-    "bullets": ["bullet 1", "bullet 2", "bullet 3"]
+    "bullets": ["bullet 1", "bullet 2", "bullet 3", "bullet 4"]
   }}
 }}
 
 Rules:
 - Focus on multiple expansion/compression, not just EPS changes.
-- Mention guidance style explicitly when relevant: for example stronger duration, margin durability, backlog visibility, capex discipline, or downside guide.
+- For "Already Priced In", explain why the market is awarding this P/E now, using the provided data where possible.
+- For each "What Pushes P/E Higher" bullet, state exactly what the company would need to do, show, guide, or sustain for the market to pay a higher multiple.
+- For each "What Pushes P/E Lower" bullet, state exactly what would need to disappoint, normalize, miss, or be guided down for the multiple to compress.
+- Every bullet must contain both: 1) a concrete business condition or management action, and 2) a data hook or valuation implication.
+- Prefer specifics like revenue growth durability, margin floor, backlog visibility, customer concentration, capex efficiency, mix shift, or guide-above-consensus behavior.
+- Do not write generic bullets like "strong growth" or "better execution".
 - Keep language concrete and investor-facing.
-- Each section must have exactly 3 bullets.
-- Each bullet should be short, ideally 6-14 words.
+- Each section must have exactly 4 bullets.
+- Each bullet should be one compact sentence, but can be longer than before if needed for specificity.
 - No markdown, no bullets, no prose outside JSON."""
 
     resp = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=700,
+        max_tokens=1100,
         messages=[{"role": "user", "content": prompt}],
     )
     return resp.content[0].text.strip()
@@ -193,7 +204,7 @@ def parse_pe_expectations(text):
         cleaned_bullets = [str(b).strip() for b in bullets if str(b).strip()]
         if not headline or not cleaned_bullets:
             return None
-        sections[key] = {"headline": headline, "bullets": cleaned_bullets[:3]}
+        sections[key] = {"headline": headline, "bullets": cleaned_bullets[:4]}
 
     return sections
 

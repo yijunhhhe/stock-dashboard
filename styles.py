@@ -213,6 +213,11 @@ CSS = """
     font-size: 1.25rem;
     font-weight: 700;
   }
+  .hero-mini-sub {
+    color: #7f90b6;
+    font-size: 0.72rem;
+    margin-top: 4px;
+  }
 
   /* Catalyst tracker */
   .tracker-head {

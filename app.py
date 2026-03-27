@@ -31,6 +31,7 @@ from cache import (
     get_cached_growth_story,
     set_cached_growth_story,
     invalidate_cached_growth_story,
+    clear_all_caches,
 )
 from ai_engine import (
     claude_valuation_method,
@@ -148,6 +149,8 @@ def main():
     with hc3:
         trail_pe  = safe(info, "trailingPE")
         fwd_pe    = safe(info, "forwardPE")
+        fwd_basis = safe(info, "forwardMetricBasis")
+        fwd_year  = safe(info, "forwardEpsYear")
         ps        = safe(info, "priceToSalesTrailing12Months")
         ev_ebitda = safe(info, "enterpriseToEbitda")
         st.markdown(
@@ -155,7 +158,7 @@ def main():
             f'  <div class="hero-meta">Quick Multiples</div>'
             f'  <div class="hero-stat-grid">'
             f'    <div class="hero-mini"><div class="hero-mini-label">Trailing P/E</div><div class="hero-mini-value">{f"{trail_pe:.1f}x" if trail_pe else "N/A"}</div></div>'
-            f'    <div class="hero-mini"><div class="hero-mini-label">Forward P/E</div><div class="hero-mini-value">{f"{fwd_pe:.1f}x" if fwd_pe else "N/A"}</div></div>'
+            f'    <div class="hero-mini"><div class="hero-mini-label">{f"Forward P/E ({fwd_year})" if fwd_year else "Forward P/E"}</div><div class="hero-mini-value">{f"{fwd_pe:.1f}x" if fwd_pe else "N/A"}</div><div class="hero-mini-sub">{fwd_basis or ""}</div></div>'
             f'    <div class="hero-mini"><div class="hero-mini-label">P/S</div><div class="hero-mini-value">{f"{ps:.1f}x" if ps else "N/A"}</div></div>'
             f'    <div class="hero-mini"><div class="hero-mini-label">EV/EBITDA</div><div class="hero-mini-value">{f"{ev_ebitda:.1f}x" if ev_ebitda else "N/A"}</div></div>'
             f'  </div>'
@@ -217,13 +220,15 @@ def main():
 
     # ── EPS Estimates row ──
     eps_map = get_eps_estimates(data)
-    now = datetime.now()
-    cy_label  = "NTM"
-    ncy_label = "FY+1"
-    eps_cy  = eps_map.get(cy_label)
-    eps_ncy = eps_map.get(ncy_label)
+    cy_label  = eps_map.get("current_label") or "Current FY"
+    ncy_label = eps_map.get("next_label") or "Next FY"
+    eps_cy  = eps_map.get("current_eps")
+    eps_ncy = eps_map.get("next_eps")
+    fwd_basis = eps_map.get("current_range")
+    next_basis = eps_map.get("next_range")
+    ttm_eps = safe(info, "trailingEps")
 
-    e1, e1b, e2, e3 = st.columns(4)
+    e1, e1b, e2, e3, e4 = st.columns(5)
     with e1:
         rev_growth = safe(info, "revenueGrowth")
         st.markdown(
@@ -240,19 +245,25 @@ def main():
         )
     with e2:
         cy_fwd_pe  = round(current_price / eps_cy,  1) if eps_cy and eps_cy > 0 else None
-        ncy_fwd_pe = round(current_price / eps_ncy, 1) if eps_ncy and eps_ncy > 0 else None
         st.markdown(
             card(f"EPS Est. {cy_label}",
                  f"${eps_cy:.2f}" if eps_cy else "N/A",
-                 f"{cy_fwd_pe}x fwd P/E" if cy_fwd_pe else None,
+                 f"{cy_fwd_pe}x forward P/E · {fwd_basis}" if cy_fwd_pe and fwd_basis else (f"{cy_fwd_pe}x forward P/E" if cy_fwd_pe else fwd_basis),
                  "neutral"),
             unsafe_allow_html=True,
         )
     with e3:
         st.markdown(
+            card("Current TTM EPS",
+                 f"${ttm_eps:.2f}" if ttm_eps else "N/A"),
+            unsafe_allow_html=True,
+        )
+    with e4:
+        ncy_fwd_pe = round(current_price / eps_ncy, 1) if eps_ncy and eps_ncy > 0 else None
+        st.markdown(
             card(f"EPS Est. {ncy_label}",
                  f"${eps_ncy:.2f}" if eps_ncy else "N/A",
-                 f"{ncy_fwd_pe}x fwd P/E" if ncy_fwd_pe else None,
+                 f"{ncy_fwd_pe}x forward P/E · {next_basis}" if ncy_fwd_pe and next_basis else (f"{ncy_fwd_pe}x forward P/E" if ncy_fwd_pe else next_basis),
                  "neutral"),
             unsafe_allow_html=True,
         )
@@ -346,7 +357,7 @@ def main():
                         stats,
                         cur_pe,
                         current_price,
-                        eps_ncy or safe(info, "forwardEps"),
+                        eps_cy or safe(info, "forwardEps"),
                         pe_df,
                     )
                 set_cached_pe_expectations(symbol, pe_expectations)
@@ -359,40 +370,41 @@ def main():
     st.markdown('<div class="section-title">Growth Potential — Price Targets</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-note">Forward scenarios should compress to three quick outcomes: bear, base, and bull. The chart is primary; the cards are just the fast read.</div>', unsafe_allow_html=True)
 
-    trail_eps = eps_cy
-    fwd_eps   = eps_ncy
-    cy  = cy_label
-    ncy = ncy_label
+    target_eps = eps_cy
+    next_target_eps = eps_ncy
+    target_label = cy_label
+    next_target_label = ncy_label
 
-    if trail_eps and fwd_eps and stats:
-        scen_cy, scen_ncy = compute_targets(trail_eps, fwd_eps, stats, current_price)
-        if scen_cy and scen_ncy:
+    if target_eps and next_target_eps and stats:
+        scenarios = compute_targets(target_eps, stats, current_price)
+        next_scenarios = compute_targets(next_target_eps, stats, current_price)
+        if scenarios and next_scenarios:
             st.plotly_chart(
-                chart_price_targets(current_price, scen_cy, scen_ncy, cy, ncy, "P/E"),
+                chart_price_targets(current_price, scenarios, next_scenarios, target_label, next_target_label, "P/E"),
                 use_container_width=True,
                 config={"displayModeBar": False},
             )
             cases = ["Bear", "Base", "Bull"]
             card_colors = ["#f97316", "#60a5fa", "#34d399"]
             cols = st.columns(3)
-            for i, (s_cy, s_ncy, col, case, color) in enumerate(zip(scen_cy, scen_ncy, cols, cases, card_colors)):
+            for scenario, next_scenario, col, case, color in zip(scenarios, next_scenarios, cols, cases, card_colors):
                 with col:
-                    upside_cy  = s_cy["upside"]
-                    upside_ncy = s_ncy["upside"]
                     st.markdown(
                         f'<div class="target-card" style="border-top:3px solid {color}">'
-                        f'  <div class="target-case" style="color:{color}">{case} ({s_cy["pe"]:.0f}x PE)</div>'
+                        f'  <div class="target-case" style="color:{color}">{case} ({scenario["pe"]:.0f}x PE)</div>'
                         f'  <div style="display:flex;justify-content:space-around;margin-top:8px">'
-                        f'    <div>'
-                        f'      <div class="target-label">{cy}</div>'
-                        f'      <div class="target-price">${s_cy["price"]:.0f}</div>'
-                        f'      <div class="target-upside" style="color:{"#f87171" if upside_cy < 0 else "#4ade80"}">{upside_cy:+.1f}%</div>'
+                        f'    <div style="text-align:center">'
+                        f'      <div class="target-label">{target_label}</div>'
+                        f'      <div class="target-price">${scenario["price"]:.0f}</div>'
+                        f'      <div class="target-label" style="margin-top:2px;color:#7f90b6">{fwd_basis or ""}</div>'
+                        f'      <div class="target-upside" style="color:{"#f87171" if scenario["upside"] < 0 else "#4ade80"}">{scenario["upside"]:+.1f}%</div>'
                         f'    </div>'
                         f'    <div style="width:1px;background:#1f2a45"></div>'
-                        f'    <div>'
-                        f'      <div class="target-label">{ncy}</div>'
-                        f'      <div class="target-price">${s_ncy["price"]:.0f}</div>'
-                        f'      <div class="target-upside" style="color:{"#f87171" if upside_ncy < 0 else "#4ade80"}">{upside_ncy:+.1f}%</div>'
+                        f'    <div style="text-align:center">'
+                        f'      <div class="target-label">{next_target_label}</div>'
+                        f'      <div class="target-price">${next_scenario["price"]:.0f}</div>'
+                        f'      <div class="target-label" style="margin-top:2px;color:#7f90b6">{next_basis or ""}</div>'
+                        f'      <div class="target-upside" style="color:{"#f87171" if next_scenario["upside"] < 0 else "#4ade80"}">{next_scenario["upside"]:+.1f}%</div>'
                         f'    </div>'
                         f'  </div>'
                         f'</div>',
@@ -455,6 +467,19 @@ def main():
             if "pe_expectations" in st.session_state:
                 del st.session_state["pe_expectations"]
             st.rerun()
+
+    st.markdown('<div class="section-title">Maintenance</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-note">Use this if a metric looks stale and you want a full local refresh.</div>', unsafe_allow_html=True)
+    if st.button("Clear All Caches"):
+        clear_all_caches()
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
+        for key in ["growth_story", "gs_symbol", "pe_expectations", "pe_symbol"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
 
     # ── Footer ──
     st.markdown(
