@@ -218,8 +218,8 @@ def main():
     # ── EPS Estimates row ──
     eps_map = get_eps_estimates(data)
     now = datetime.now()
-    cy_label  = f"CY{now.year}"
-    ncy_label = f"CY{now.year + 1}"
+    cy_label  = "NTM"
+    ncy_label = "FY+1"
     eps_cy  = eps_map.get(cy_label)
     eps_ncy = eps_map.get(ncy_label)
 

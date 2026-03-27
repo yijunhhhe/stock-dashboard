@@ -71,14 +71,10 @@ def get_eps_estimates(data):
     """
     est = data.get("eps_estimate")
     info = data["info"]
-    now = datetime.now()
-    cy  = f"CY{now.year}"
-    ncy = f"CY{now.year + 1}"
-
-    # Primary: use Yahoo's own forwardEps for cy (same basis as their forwardPE)
+    # Primary: use Yahoo's own forwardEps for NTM (same basis as their forwardPE)
     cy_eps = safe(info, "forwardEps")
 
-    # For ncy use the analyst "+1y" estimate from earnings_estimate table
+    # For FY+1 use the analyst "+1y" estimate from earnings_estimate table
     ncy_eps = None
     if est is not None and not est.empty:
         try:
@@ -88,7 +84,7 @@ def get_eps_estimates(data):
         except Exception:
             pass
 
-    return {cy: cy_eps, ncy: ncy_eps}
+    return {"NTM": cy_eps, "FY+1": ncy_eps}
 
 
 def _strip_tz(idx):
